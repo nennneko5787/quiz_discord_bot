@@ -1,0 +1,14 @@
+[project]
+name = "quiz-discord-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "discord-py>=2.7.1",
+    "httpx>=0.28.1",
+    "jaconv>=0.5.0",
+    "numpy>=2.4.4",
+    "openai>=2.32.0",
+    "python-dotenv>=1.2.2",
+]
