@@ -88,7 +88,7 @@ class QuizCog(commands.Cog):
         await interaction.response.send_message("練習を始めます")
         await self.quiz(practice=True, genre=genre)
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=30)
     async def quizLoop(self):
         await random.choice([self.quiz, self.pokemon])()
 
