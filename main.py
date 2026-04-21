@@ -21,6 +21,7 @@ async def sync(ctx: commands.Context):
 @bot.event
 async def setup_hook():
     await bot.load_extension("cogs.quiz")
+    await bot.load_extension("cogs.webhook")
 
 
 if __name__ == "__main__":
