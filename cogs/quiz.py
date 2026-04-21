@@ -131,20 +131,28 @@ class QuizCog(commands.Cog):
         await self.queue.put(lambda: self.pokemon())
 
     @group.command(name="quiz", description="クイズの練習をします")
-    @app_commands.rename(genre="ジャンル", thinkingLevel="思考レベル")
+    @app_commands.rename(genre="ジャンル", thinkingLevel="思考")
     @app_commands.describe(
         genre="ジャンルを指定できます（省略可）",
         thinkingLevel="思考の深さを指定できます（省略可）",
+    )
+    @app_commands.choices(
+        thinkingLevel=[
+            app_commands.Choice(name="めっちゃ考える", value="HIGH"),
+            app_commands.Choice(name="少ししか考えない", value="MINIMAL"),
+        ]
     )
     async def quizCommand(
         self,
         interaction: discord.Interaction,
         genre: str = "",
-        thinkingLevel: Optional[types.ThinkingLevel] = None,
+        thinkingLevel: Optional[str] = None,
     ):
         await interaction.response.send_message("練習を始めます")
         await self.queue.put(
-            lambda: self.quiz(genre=genre, thinkingLevel=thinkingLevel)
+            lambda: self.quiz(
+                genre=genre, thinkingLevel=types.ThinkingLevel(thinkingLevel)
+            )
         )
 
     @tasks.loop(minutes=30)
