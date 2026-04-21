@@ -3,6 +3,7 @@ import io
 import os
 import random
 import re
+import traceback
 from typing import Awaitable, Callable, Dict, List, Optional, Union
 
 import discord
@@ -173,13 +174,17 @@ class QuizCog(commands.Cog):
 
     async def quizQueue(self):
         while True:
-            print("start")
-            func = await self.queue.get()
-            print("omg")
-            await func()
-            print("yeah")
-            await asyncio.sleep(0)
-            print("end")
+            try:
+                print("start")
+                func = await self.queue.get()
+                print("omg")
+                await func()
+                print("yeah")
+            except Exception:
+                traceback.print_exc()
+            finally:
+                await asyncio.sleep(0)
+                print("end")
 
     async def pokemon(self):
         channel = self.bot.get_channel(1491704146544300094)
