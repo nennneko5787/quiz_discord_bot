@@ -327,6 +327,7 @@ class QuizCog(commands.Cog):
                 ),
             )
 
+            print(response.text)
             rawText = (response.text or "").strip()
             rawText = re.sub(r"^```json\s*", "", rawText, flags=re.I)
             rawText = re.sub(r"```$", "", rawText).strip()
