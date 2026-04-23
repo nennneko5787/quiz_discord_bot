@@ -151,7 +151,7 @@ class QuizCog(commands.Cog):
         await interaction.response.send_message("練習を始めます")
         await self.queue.put(
             lambda: self.quiz(
-                genre=genre, thinkingLevel=types.ThinkingLevel(thinkingLevel)
+                genre=genre, thinkingLevel=types.ThinkingLevel(thinkingLevel or types.ThinkingLevel.HIGH)
             )
         )
 
