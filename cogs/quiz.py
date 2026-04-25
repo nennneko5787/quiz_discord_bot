@@ -14,6 +14,10 @@ import numpy
 from discord import app_commands
 from discord.ext import commands, tasks
 from openai import AsyncOpenAI
+from openai.types.chat import (
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from pydantic import BaseModel
 
 dotenv.load_dotenv()
@@ -470,56 +474,60 @@ class QuizCog(commands.Cog):
         self.inGame = True
 
         async with channel.typing():
-            prompt = (
-                "適当に◯✕クイズ1問だけ出してください。"
-                f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
-                f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
-                f"追加情報: {extras}"
-                "色んなジャンルから問題を出してください。"
-                '{"genre":"ジャンル","question":"問題","answer":true,"explanation":"解説","correctMessage":"正解時のメッセージ","incorrectMessage":"不正解時のメッセージ","unansweredMessage":"未回答時のメッセージ"}'
-                "json以外のデータを出力しないでください。(メッセージも)"
+            question = (
+                (
+                    await openaiClient.chat.completions.parse(
+                        model="gemini-3-pro-preview",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "あなたはクイズ出題AIです。JSONのみ返してください。",
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    "選択肢形式のクイズを1問だけ出してください。"
+                                    f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
+                                    f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
+                                    f"追加情報: {extras}"
+                                    "色んなジャンルから問題を出してください。"
+                                    "json以外のデータを出力しないでください。(メッセージも)"
+                                ),
+                            },
+                        ],
+                        response_format=Question,
+                        extra_body={
+                            "safety_settings": [
+                                {
+                                    "category": "HARM_CATEGORY_HARASSMENT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                            ]
+                        },
+                    )
+                )
+                .choices[0]
+                .message.parsed
             )
 
-            response = await openaiClient.responses.create(
-                model="gemini-3-pro-preview",
-                instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
-                input=prompt,
-                extra_body={
-                    "safety_settings": [
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
-                            "threshold": "BLOCK_NONE",
-                        },
-                    ]
-                },
-            )
-
-            rawText = (response.output_text or "").strip()
-            rawText = re.sub(r"^```json\s*", "", rawText, flags=re.I)
-            rawText = re.sub(r"```$", "", rawText).strip()
-            rawText = re.sub(r"<thought>.*?</thought>", "", rawText, flags=re.S).strip()
-
-            match = re.search(r"\{.*\}", rawText, re.S)
-            if not match:
-                raise ValueError("JSON not found")
-
-            question = Question.model_validate_json(match.group(0))
+        if question is None:
+            return
 
         view = QuizView(question=question)
         quizMessage = await channel.send(view=view)
@@ -582,62 +590,62 @@ class QuizCog(commands.Cog):
         self.inGame = True
 
         async with channel.typing():
-            prompt = (
-                "選択肢形式のクイズを1問だけ出してください。"
-                f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
-                f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
-                f"追加情報: {extras}"
-                "色んなジャンルから問題を出してください。"
-                "選択肢の数は問題の性質に合わせて2〜20個の間で自由に決めてください。"
-                '{"genre":"ジャンル","question":"問題","answer":true,"explanation":"解説","correctMessage":"正解時のメッセージ","incorrectMessage":"不正解時のメッセージ","unansweredMessage":"未回答時のメッセージ"}'
-                "answerIndexは0始まりのインデックスです。"
-                "json以外のデータを出力しないでください。(メッセージも)"
+            question = (
+                (
+                    await openaiClient.chat.completions.parse(
+                        model="gemini-3-pro-preview",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "あなたはクイズ出題AIです。JSONのみ返してください。",
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    "選択肢形式のクイズを1問だけ出してください。"
+                                    f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
+                                    f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
+                                    f"追加情報: {extras}"
+                                    "色んなジャンルから問題を出してください。"
+                                    "選択肢の数は問題の性質に合わせて2〜20個の間で自由に決めてください。"
+                                    "answerIndexは0始まりのインデックスです。"
+                                    "json以外のデータを出力しないでください。(メッセージも)"
+                                ),
+                            },
+                        ],
+                        response_format=QuestionEx,
+                        extra_body={
+                            "safety_settings": [
+                                {
+                                    "category": "HARM_CATEGORY_HARASSMENT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                                {
+                                    "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                                    "threshold": "BLOCK_NONE",
+                                },
+                            ]
+                        },
+                    )
+                )
+                .choices[0]
+                .message.parsed
             )
 
-            response = await openaiClient.responses.create(
-                model="gemini-3-pro-preview",
-                instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
-                input=prompt,
-                extra_body={
-                    "safety_settings": [
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
-                            "threshold": "BLOCK_NONE",
-                        },
-                    ]
-                },
-            )
-
-            rawText = (response.output_text or "").strip()
-            rawText = re.sub(r"^```json\s*", "", rawText, flags=re.I)
-            rawText = re.sub(r"```$", "", rawText).strip()
-            rawText = re.sub(r"<thought>.*?</thought>", "", rawText, flags=re.S).strip()
-
-            match = re.search(r"\{.*\}", rawText, re.S)
-            if not match:
-                raise ValueError("JSON not found")
-
-            question = QuestionEx.model_validate_json(match.group(0))
-            # 念のため上限チェック
-            question.choices = question.choices[:20]
-            if not (0 <= question.answerIndex < len(question.choices)):
-                question.answerIndex = 0
+        if question is None:
+            return
 
         view = QuizViewEx(question=question)
         quizMessage = await channel.send(view=view)
