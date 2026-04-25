@@ -65,6 +65,9 @@ class AnswerButtons(discord.ui.ActionRow):
 
     def getAnswerPercent(self):
         all = len(self.answers)
+        if all == 0:
+            return 0, 0, 0
+
         correct = len(
             [a for a in self.answers.values() if a is self.__view.question.answer]
         )
