@@ -273,7 +273,7 @@ class QuizCog(commands.Cog):
             )
         )
 
-    @group.command(name="quiz_ex", description="選択肢形式のクイズの練習をします")
+    @group.command(name="ex", description="選択肢形式のクイズの練習をします")
     @app_commands.rename(genre="ジャンル", extras="追加情報", difficulty="難しさ")
     @app_commands.describe(
         genre="ジャンルを指定できます（省略可）",
