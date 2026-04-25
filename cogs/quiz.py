@@ -128,22 +128,25 @@ class QuizCog(commands.Cog):
         await self.queue.put(lambda: self.pokemon())
 
     @group.command(name="quiz", description="クイズの練習をします")
-    @app_commands.rename(genre="ジャンル", extras="追加情報")
+    @app_commands.rename(genre="ジャンル", extras="追加情報", difficulty="難しさ")
     @app_commands.describe(
         genre="ジャンルを指定できます（省略可）",
-        extras="追加情報",
+        extras="絶対に見えないであろう追加情報",
+        difficulty="難しさ(0~1000)",
     )
     async def quizCommand(
         self,
         interaction: discord.Interaction,
         genre: str = "",
         extras: str = "",
+        difficulty: Optional[app_commands.Range[int, 0, 1000]] = None,
     ):
         await interaction.response.send_message("練習を始めます", ephemeral=True)
         await self.queue.put(
             lambda: self.quiz(
                 genre=genre,
                 extras=extras,
+                difficulty=difficulty,
             )
         )
 
@@ -256,12 +259,14 @@ class QuizCog(commands.Cog):
         *,
         genre: str = "",
         extras: str = "",
+        difficulty: Optional[int] = None,
     ):
         channel = self.bot.get_channel(1491704146544300094)
         if not channel or not isinstance(channel, discord.TextChannel):
             return
 
-        difficulty = random.randint(1, 1000)
+        if difficulty is None:
+            difficulty = random.randint(1, 1000)
         self.inGame = True
 
         async with channel.typing():
