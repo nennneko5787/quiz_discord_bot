@@ -3,7 +3,7 @@ import io
 import random
 import re
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Dict, List, Optional, Union
 
 import discord
@@ -97,7 +97,7 @@ class QuizView(discord.ui.LayoutView):
         )
         self.body = discord.ui.TextDisplay(question.question)
         self.limit = discord.ui.TextDisplay(
-            f"回答期限{discord.utils.format_dt(datetime.now(), 'R')}"
+            f"回答期限{discord.utils.format_dt(datetime.now() + timedelta(seconds=30), 'R')}"
         )
         self.buttons = AnswerButtons(self)
         container = discord.ui.Container(
@@ -108,17 +108,6 @@ class QuizView(discord.ui.LayoutView):
             accent_color=discord.Color.blurple(),
         )
         self.add_item(container)
-
-    async def on_timeout(self):
-        for item in self.buttons.children:
-            if isinstance(item, discord.ui.Button):
-                item.disabled = True
-        if self.message:
-            try:
-                await self.message.edit(view=self)
-            except discord.NotFound:
-                pass
-        self.timeoutEvent.set()
 
 
 class QuizCog(commands.Cog):
@@ -306,7 +295,15 @@ class QuizCog(commands.Cog):
         quizMessage = await channel.send(view=view)
         view.message = quizMessage
 
-        await view.timeoutEvent.wait()
+        await asyncio.sleep(30)
+
+        for item in view.buttons.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        try:
+            await quizMessage.edit(view=view)
+        except discord.NotFound:
+            pass
 
         winner = (
             view.buttons.correctLog[0] if len(view.buttons.correctLog) > 0 else None
