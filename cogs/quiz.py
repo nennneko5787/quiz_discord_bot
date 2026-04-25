@@ -23,12 +23,35 @@ openaiClient = AsyncOpenAI(
     base_url="https://capi.voids.top/v2",
 )
 
+CHOICE_LABELS = list("ABCDEFGHIJKLMNOPQRST")  # 最大20択
+CHOICE_STYLES = [
+    discord.ButtonStyle.primary,
+    discord.ButtonStyle.secondary,
+    discord.ButtonStyle.success,
+    discord.ButtonStyle.danger,
+    discord.ButtonStyle.blurple,
+]
+
+
+# ---- モデル ----
+
 
 class Question(BaseModel):
     genre: str
     question: str
     answer: bool
     explanation: str
+
+
+class QuestionEx(BaseModel):
+    genre: str
+    question: str
+    choices: List[str]  # 2〜20個
+    answerIndex: int  # 0-indexed
+    explanation: str
+
+
+# ---- ◯✕クイズ View ----
 
 
 class AnswerButtons(discord.ui.ActionRow):
@@ -112,6 +135,106 @@ class QuizView(discord.ui.LayoutView):
         self.add_item(container)
 
 
+# ---- 選択肢クイズ View ----
+
+
+class AnswerButtonsEx:
+    """選択肢数に応じて ActionRow を動的生成する（1行5個まで、最大20択）"""
+
+    def __init__(self, view: "QuizViewEx") -> None:
+        self._view = view
+        # user_id -> choiceIndex
+        self.answers: Dict[int, int] = {}
+        self.correctLog: List[Union[discord.Member, discord.User]] = []
+
+        self.rows: List[discord.ui.ActionRow] = []
+        self.buttons: List[discord.ui.Button] = []
+
+        choices = view.question.choices
+        for rowStart in range(0, len(choices), 5):
+            row = discord.ui.ActionRow()
+            for i in range(rowStart, min(rowStart + 5, len(choices))):
+                btn = discord.ui.Button(
+                    label=CHOICE_LABELS[i],
+                    style=CHOICE_STYLES[i % len(CHOICE_STYLES)],
+                    custom_id=f"quiz_ex_{i}",
+                )
+                btn.callback = self._makeCallback(i)
+                row.add_item(btn)
+                self.buttons.append(btn)
+            self.rows.append(row)
+
+    def _makeCallback(self, index: int):
+        async def callback(interaction: discord.Interaction):
+            self._recordPress(interaction.user, index)
+            isCorrect = index == self._view.question.answerIndex
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title=f"{CHOICE_LABELS[index]} に回答しました。",
+                    color=discord.Color.green() if isCorrect else discord.Color.red(),
+                ),
+                ephemeral=True,
+            )
+
+        return callback
+
+    def _recordPress(self, user: Union[discord.Member, discord.User], index: int):
+        isCorrect = index == self._view.question.answerIndex
+        if isCorrect:
+            if user not in self.correctLog:
+                self.correctLog.append(user)
+        else:
+            if user in self.correctLog:
+                self.correctLog.remove(user)
+        self.answers[user.id] = index
+
+    def getAnswerStats(self):
+        total = len(self.answers)
+        counts = [0] * len(self._view.question.choices)
+        for choiceIndex in self.answers.values():
+            if 0 <= choiceIndex < len(counts):
+                counts[choiceIndex] += 1
+        percents = [c / total if total > 0 else 0.0 for c in counts]
+        return total, counts, percents
+
+    def setDisabled(self, disabled: bool):
+        for btn in self.buttons:
+            btn.disabled = disabled
+
+
+class QuizViewEx(discord.ui.LayoutView):
+    def __init__(self, question: QuestionEx):
+        super().__init__(timeout=30)
+        self.message: discord.Message | None = None
+        self.question = question
+
+        choicesText = "\n".join(
+            f"**{CHOICE_LABELS[i]}.** {choice}"
+            for i, choice in enumerate(question.choices)
+        )
+
+        self.header = discord.ui.TextDisplay(
+            f"### ジャンル「{question.genre}」からの問題！"
+        )
+        self.body = discord.ui.TextDisplay(f"{question.question}\n\n{choicesText}")
+        self.limit = discord.ui.TextDisplay(
+            f"回答期限{discord.utils.format_dt(datetime.now() + timedelta(seconds=30), 'R')}"
+        )
+        self.buttonRows = AnswerButtonsEx(self)
+
+        container = discord.ui.Container(
+            self.header,
+            self.body,
+            self.limit,
+            *self.buttonRows.rows,
+            accent_color=discord.Color.blurple(),
+        )
+        self.add_item(container)
+
+
+# ---- Cog ----
+
+
 class QuizCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -150,6 +273,29 @@ class QuizCog(commands.Cog):
             )
         )
 
+    @group.command(name="quizex", description="選択肢形式のクイズの練習をします")
+    @app_commands.rename(genre="ジャンル", extras="追加情報", difficulty="難しさ")
+    @app_commands.describe(
+        genre="ジャンルを指定できます（省略可）",
+        extras="追加情報",
+        difficulty="難しさ(0~1000)",
+    )
+    async def quizExCommand(
+        self,
+        interaction: discord.Interaction,
+        genre: str = "",
+        extras: str = "",
+        difficulty: Optional[app_commands.Range[int, 0, 1000]] = None,
+    ):
+        await interaction.response.send_message("練習を始めます", ephemeral=True)
+        await self.queue.put(
+            lambda: self.quizEx(
+                genre=genre,
+                extras=extras,
+                difficulty=difficulty,
+            )
+        )
+
     @tasks.loop(minutes=30)
     async def quizLoop(self):
         if not self.bot.is_ready():
@@ -158,6 +304,7 @@ class QuizCog(commands.Cog):
             [
                 lambda: self.quiz(),
                 lambda: self.pokemon(),
+                lambda: self.quizEx(),
             ]
         )
         await self.queue.put(func)
@@ -332,6 +479,106 @@ class QuizCog(commands.Cog):
                     name="正解率",
                     value=f"回答者{answerCount}人のうち 正解 {correct * 100}% 不正解 {incorrect * 100}%",
                 )
+                .set_footer(text=f"難しさ: {difficulty}"),
+                discord.Embed(
+                    title="解説",
+                    description=question.explanation,
+                    color=discord.Color.blurple(),
+                ),
+            ]
+        )
+        self.inGame = False
+
+    async def quizEx(
+        self,
+        *,
+        genre: str = "",
+        extras: str = "",
+        difficulty: Optional[int] = None,
+    ):
+        channel = self.bot.get_channel(1491704146544300094)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return
+
+        if difficulty is None:
+            difficulty = random.randint(1, 1000)
+        self.inGame = True
+
+        async with channel.typing():
+            prompt = (
+                "選択肢形式のクイズを1問だけ出してください。"
+                f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
+                f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
+                f"追加情報: {extras}"
+                "色んなジャンルから問題を出してください。"
+                "日常で使うクイズの他に「ボカロ」「ネットカルチャー」「ツイ廃」「アニメ」「日本史」「世界史」「性癖」「VTuber」など様々なジャンルで出題してください。(ぜひこれ以外のジャンルを出してほしい)"
+                "選択肢の数は問題の性質に合わせて2〜20個の間で自由に決めてください。"
+                '{"genre":"ジャンル","question":"問題文","choices":["選択肢A","選択肢B",...],"answerIndex":0,"explanation":"解説"}'
+                "answerIndexは0始まりのインデックスです。"
+                "json以外のデータを出力しないでください。(メッセージも)"
+            )
+
+            response = await openaiClient.responses.create(
+                model="gemini-3-pro-preview",
+                instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
+                input=prompt,
+            )
+
+            rawText = (response.output_text or "").strip()
+            rawText = re.sub(r"^```json\s*", "", rawText, flags=re.I)
+            rawText = re.sub(r"```$", "", rawText).strip()
+            rawText = re.sub(r"<thought>.*?</thought>", "", rawText, flags=re.S).strip()
+
+            match = re.search(r"\{.*\}", rawText, re.S)
+            if not match:
+                raise ValueError("JSON not found")
+
+            question = QuestionEx.model_validate_json(match.group(0))
+            # 念のため上限チェック
+            question.choices = question.choices[:20]
+            if not (0 <= question.answerIndex < len(question.choices)):
+                question.answerIndex = 0
+
+        view = QuizViewEx(question=question)
+        quizMessage = await channel.send(view=view)
+        view.message = quizMessage
+
+        await asyncio.sleep(30)
+
+        view.buttonRows.setDisabled(True)
+        try:
+            await quizMessage.edit(view=view)
+        except discord.NotFound:
+            pass
+
+        winner = (
+            view.buttonRows.correctLog[0]
+            if len(view.buttonRows.correctLog) > 0
+            else None
+        )
+        total, counts, percents = view.buttonRows.getAnswerStats()
+        correctLabel = CHOICE_LABELS[question.answerIndex]
+        correctChoice = question.choices[question.answerIndex]
+
+        statsLines = "\n".join(
+            f"**{CHOICE_LABELS[i]}.** {choice}　{round(p * 100)}%（{c}人）"
+            + (" ✅" if i == question.answerIndex else "")
+            for i, (choice, c, p) in enumerate(zip(question.choices, counts, percents))
+        )
+
+        await channel.send(
+            embeds=[
+                discord.Embed(
+                    title="正解発表",
+                    description=f"正解は **{correctLabel}. {correctChoice}**",
+                    color=discord.Color.blurple(),
+                )
+                .add_field(
+                    name="最速正解者",
+                    value=winner.mention if winner else "正解者なし",
+                )
+                .add_field(name="回答者数", value=f"{total}人", inline=True)
+                .add_field(name="回答内訳", value=statsLines, inline=False)
                 .set_footer(text=f"難しさ: {difficulty}"),
                 discord.Embed(
                     title="解説",
