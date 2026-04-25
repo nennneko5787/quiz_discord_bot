@@ -65,9 +65,6 @@ class AnswerButtons(discord.ui.ActionRow):
 
     def getAnswerPercent(self):
         all = len(self.answers)
-        if all == 0:
-            return 0, 0, 0
-
         correct = len(
             [a for a in self.answers.values() if a is self.__view.question.answer]
         )
@@ -276,7 +273,7 @@ class QuizCog(commands.Cog):
             )
         )
 
-    @group.command(name="quizex", description="選択肢形式のクイズの練習をします")
+    @group.command(name="quiz_ex", description="選択肢形式のクイズの練習をします")
     @app_commands.rename(genre="ジャンル", extras="追加情報", difficulty="難しさ")
     @app_commands.describe(
         genre="ジャンルを指定できます（省略可）",
@@ -435,6 +432,30 @@ class QuizCog(commands.Cog):
                 model="gemini-3-pro-preview",
                 instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
                 input=prompt,
+                extra_body={
+                    "safety_settings": [
+                        {
+                            "category": "HARM_CATEGORY_HARASSMENT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_HATE_SPEECH",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                            "threshold": "BLOCK_NONE",
+                        },
+                    ]
+                },
             )
 
             rawText = (response.output_text or "").strip()
@@ -525,6 +546,30 @@ class QuizCog(commands.Cog):
                 model="gemini-3-pro-preview",
                 instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
                 input=prompt,
+                extra_body={
+                    "safety_settings": [
+                        {
+                            "category": "HARM_CATEGORY_HARASSMENT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_HATE_SPEECH",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            "threshold": "BLOCK_NONE",
+                        },
+                        {
+                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                            "threshold": "BLOCK_NONE",
+                        },
+                    ]
+                },
             )
 
             rawText = (response.output_text or "").strip()
