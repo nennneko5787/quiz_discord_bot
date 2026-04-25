@@ -41,14 +41,18 @@ class Question(BaseModel):
     question: str
     answer: bool
     explanation: str
+    correctMessage: str
+    incorrectMessage: str
 
 
 class QuestionEx(BaseModel):
     genre: str
     question: str
-    choices: List[str]  # 2〜20個
-    answerIndex: int  # 0-indexed
+    choices: List[str]
+    answerIndex: int
     explanation: str
+    correctMessage: str
+    incorrectMessage: str
 
 
 # ---- ◯✕クイズ View ----
@@ -65,6 +69,9 @@ class AnswerButtons(discord.ui.ActionRow):
 
     def getAnswerPercent(self):
         all = len(self.answers)
+        if all == 0:
+            return 0, 0, 0
+
         correct = len(
             [a for a in self.answers.values() if a is self.__view.question.answer]
         )
@@ -167,11 +174,10 @@ class AnswerButtonsEx:
     def _makeCallback(self, index: int):
         async def callback(interaction: discord.Interaction):
             self._recordPress(interaction.user, index)
-            isCorrect = index == self._view.question.answerIndex
             await interaction.response.send_message(
                 embed=discord.Embed(
                     title=f"{CHOICE_LABELS[index]} に回答しました。",
-                    color=discord.Color.green() if isCorrect else discord.Color.red(),
+                    color=discord.Color.purple(),
                 ),
                 ephemeral=True,
             )
@@ -230,6 +236,46 @@ class QuizViewEx(discord.ui.LayoutView):
             accent_color=discord.Color.blurple(),
         )
         self.add_item(container)
+
+
+class ResultView(discord.ui.View):
+    def __init__(self, question, answers, isEx=False):
+        super().__init__(timeout=None)
+        self.question = question
+        self.answers = answers
+        self.isEx = isEx
+
+    @discord.ui.button(label="結果を見る", style=discord.ButtonStyle.success)
+    async def resultButton(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        userId = interaction.user.id
+
+        if userId not in self.answers:
+            await interaction.response.send_message(
+                "あなたはこの問題に回答していません。", ephemeral=True
+            )
+            return
+
+        answer = self.answers[userId]
+
+        if self.isEx:
+            correct = answer == self.question.answerIndex
+        else:
+            correct = answer == self.question.answer
+
+        msg = (
+            self.question.correctMessage if correct else self.question.incorrectMessage
+        )
+
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="あなたの結果",
+                description=msg,
+                color=discord.Color.green() if correct else discord.Color.red(),
+            ),
+            ephemeral=True,
+        )
 
 
 # ---- Cog ----
@@ -423,7 +469,7 @@ class QuizCog(commands.Cog):
                 f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
                 f"追加情報: {extras}"
                 "色んなジャンルから問題を出してください。"
-                '{"genre":"ジャンル","question":"問題文","answer":true/false,"explanation":"解説"}'
+                '{"genre":"","question":"","answer":true,"explanation":"","correctMessage":"","incorrectMessage":""}'
                 "json以外のデータを出力しないでください。(メッセージも)"
             )
 
@@ -508,7 +554,8 @@ class QuizCog(commands.Cog):
                     description=question.explanation,
                     color=discord.Color.blurple(),
                 ),
-            ]
+            ],
+            view=ResultView(question, view.buttons.answers, isEx=False),
         )
         self.inGame = False
 
@@ -535,7 +582,7 @@ class QuizCog(commands.Cog):
                 f"追加情報: {extras}"
                 "色んなジャンルから問題を出してください。"
                 "選択肢の数は問題の性質に合わせて2〜20個の間で自由に決めてください。"
-                '{"genre":"ジャンル","question":"問題文","choices":["選択肢A","選択肢B",...],"answerIndex":0,"explanation":"解説"}'
+                '{"genre":"","question":"","choices":[],"answerIndex":0,"explanation":"","correctMessage":"","incorrectMessage":""}'
                 "answerIndexは0始まりのインデックスです。"
                 "json以外のデータを出力しないでください。(メッセージも)"
             )
@@ -631,7 +678,8 @@ class QuizCog(commands.Cog):
                     description=question.explanation,
                     color=discord.Color.blurple(),
                 ),
-            ]
+            ],
+            view=ResultView(question, view.buttonRows.answers, isEx=True),
         )
         self.inGame = False
 
