@@ -43,6 +43,7 @@ class Question(BaseModel):
     explanation: str
     correctMessage: str
     incorrectMessage: str
+    unansweredMessage: str
 
 
 class QuestionEx(BaseModel):
@@ -53,6 +54,7 @@ class QuestionEx(BaseModel):
     explanation: str
     correctMessage: str
     incorrectMessage: str
+    unansweredMessage: str
 
 
 # ---- ◯✕クイズ View ----
@@ -253,7 +255,12 @@ class ResultView(discord.ui.View):
 
         if userId not in self.answers:
             await interaction.response.send_message(
-                "あなたはこの問題に回答していません。", ephemeral=True
+                embed=discord.Embed(
+                    title="あなたの結果",
+                    description=self.question.unansweredMessage,
+                    color=discord.Color.blurple(),
+                ),
+                ephemeral=True,
             )
             return
 
@@ -465,11 +472,11 @@ class QuizCog(commands.Cog):
         async with channel.typing():
             prompt = (
                 "適当に◯✕クイズ1問だけ出してください。"
-                f"難しさ指数: {difficulty} / 500 で問題を作ってください。"
+                f"難しさ指数: {difficulty} / 1000 で問題を作ってください。"
                 f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
                 f"追加情報: {extras}"
                 "色んなジャンルから問題を出してください。"
-                '{"genre":"","question":"","answer":true,"explanation":"","correctMessage":"","incorrectMessage":""}'
+                '{"genre":"ジャンル","question":"問題","answer":true,"explanation":"解説","correctMessage":"正解時のメッセージ","incorrectMessage":"不正解時のメッセージ","unansweredMessage":"未回答時のメッセージ"}'
                 "json以外のデータを出力しないでください。(メッセージも)"
             )
 
@@ -582,7 +589,7 @@ class QuizCog(commands.Cog):
                 f"追加情報: {extras}"
                 "色んなジャンルから問題を出してください。"
                 "選択肢の数は問題の性質に合わせて2〜20個の間で自由に決めてください。"
-                '{"genre":"","question":"","choices":[],"answerIndex":0,"explanation":"","correctMessage":"","incorrectMessage":""}'
+                '{"genre":"ジャンル","question":"問題","answer":true,"explanation":"解説","correctMessage":"正解時のメッセージ","incorrectMessage":"不正解時のメッセージ","unansweredMessage":"未回答時のメッセージ"}'
                 "answerIndexは0始まりのインデックスです。"
                 "json以外のデータを出力しないでください。(メッセージも)"
             )
