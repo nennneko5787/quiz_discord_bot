@@ -1,9 +1,9 @@
 import asyncio
 import io
-import os
 import random
 import re
 import traceback
+from datetime import datetime
 from typing import Awaitable, Callable, Dict, List, Optional, Union
 
 import discord
@@ -13,11 +13,15 @@ import jaconv
 import numpy
 from discord import app_commands
 from discord.ext import commands, tasks
-from google import genai
-from google.genai import types
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 dotenv.load_dotenv()
+
+openaiClient = AsyncOpenAI(
+    api_key="PAICHA_TAIHO_OMEDETO",
+    base_url="https://capi.voids.top/v2",
+)
 
 
 class Question(BaseModel):
@@ -92,10 +96,14 @@ class QuizView(discord.ui.LayoutView):
             f"### ジャンル「{question.genre}」からの問題！"
         )
         self.body = discord.ui.TextDisplay(question.question)
+        self.limit = discord.ui.TextDisplay(
+            f"回答期限{discord.utils.format_dt(datetime.now(), 'R')}"
+        )
         self.buttons = AnswerButtons(self)
         container = discord.ui.Container(
             self.header,
             self.body,
+            self.limit,
             self.buttons,
             accent_color=discord.Color.blurple(),
         )
@@ -121,37 +129,30 @@ class QuizCog(commands.Cog):
         self.task: Optional[asyncio.Task] = None
         self.queue: asyncio.Queue[Callable[[], Awaitable[None]]] = asyncio.Queue()
 
-        self.genai = genai.Client(api_key=os.getenv("openai_api_key")).aio
-
     group = app_commands.Group(name="quiz", description="クイズ関連のコマンド。")
 
     @group.command(name="pokemon", description="ポケモンクイズの練習をします")
     async def pokemonCommand(self, interaction: discord.Interaction):
-        await interaction.response.send_message("練習を始めます")
+        await interaction.response.send_message("練習を始めます", ephemeral=True)
         await self.queue.put(lambda: self.pokemon())
 
     @group.command(name="quiz", description="クイズの練習をします")
-    @app_commands.rename(genre="ジャンル", thinkingLevel="思考")
+    @app_commands.rename(genre="ジャンル", extras="追加情報")
     @app_commands.describe(
         genre="ジャンルを指定できます（省略可）",
-        thinkingLevel="思考の深さを指定できます（省略可）",
-    )
-    @app_commands.choices(
-        thinkingLevel=[
-            app_commands.Choice(name="めっちゃ考える", value="HIGH"),
-            app_commands.Choice(name="少ししか考えない", value="MINIMAL"),
-        ]
+        extras="追加情報",
     )
     async def quizCommand(
         self,
         interaction: discord.Interaction,
         genre: str = "",
-        thinkingLevel: Optional[str] = None,
+        extras: str = "",
     ):
-        await interaction.response.send_message("練習を始めます")
+        await interaction.response.send_message("練習を始めます", ephemeral=True)
         await self.queue.put(
             lambda: self.quiz(
-                genre=genre, thinkingLevel=types.ThinkingLevel(thinkingLevel or types.ThinkingLevel.HIGH)
+                genre=genre,
+                extras=extras,
             )
         )
 
@@ -263,11 +264,8 @@ class QuizCog(commands.Cog):
         self,
         *,
         genre: str = "",
-        thinkingLevel: Optional[types.ThinkingLevel] = None,
+        extras: str = "",
     ):
-        if not thinkingLevel:
-            thinkingLevel = types.ThinkingLevel.HIGH
-
         channel = self.bot.get_channel(1491704146544300094)
         if not channel or not isinstance(channel, discord.TextChannel):
             return
@@ -276,59 +274,24 @@ class QuizCog(commands.Cog):
         self.inGame = True
 
         async with channel.typing():
-            response = await self.genai.models.generate_content(
-                model="gemma-4-31b-it",
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_text(
-                                text=(
-                                    "適当に◯✕クイズ1問だけ出してください。"
-                                    f"難しさ指数: {difficulty} / 500 で問題を作ってください。"
-                                    f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
-                                    "色んなジャンルから問題を出してください。"
-                                    "日常で使うクイズの他に「ボカロ」「ネットカルチャー」「ツイ廃」「アニメ」「日本史」「世界史」「性癖」「VTuber」など様々なジャンルで出題してください。(ぜひこれ以外のジャンルを出してほしい)"
-                                    '{"genre":"ジャンル","question":"問題文","answer":true/false,"explanation":"解説"}'
-                                    "json以外のデータを出力しないでください。(メッセージも)"
-                                )
-                            )
-                        ],
-                    ),
-                ],
-                config=types.GenerateContentConfig(
-                    safety_settings=[
-                        types.SafetySetting(
-                            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                            threshold=types.HarmBlockThreshold.BLOCK_NONE,  # Block none
-                        ),
-                        types.SafetySetting(
-                            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                            threshold=types.HarmBlockThreshold.BLOCK_NONE,  # Block none
-                        ),
-                        types.SafetySetting(
-                            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                            threshold=types.HarmBlockThreshold.BLOCK_NONE,  # Block none
-                        ),
-                        types.SafetySetting(
-                            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                            threshold=types.HarmBlockThreshold.BLOCK_NONE,  # Block none
-                        ),
-                    ],
-                    system_instruction=types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_text(
-                                text="あなたはクイズ出題AIです。JSONのみ返してください。"
-                            )
-                        ],
-                    ),
-                    thinking_config=types.ThinkingConfig(thinking_level=thinkingLevel),
-                ),
+            prompt = (
+                "適当に◯✕クイズ1問だけ出してください。"
+                f"難しさ指数: {difficulty} / 500 で問題を作ってください。"
+                f"ジャンル指定: {genre if genre != '' else 'なし'} (ジャンル指定は無視しないでください。)"
+                f"追加情報: {extras}"
+                "色んなジャンルから問題を出してください。"
+                "日常で使うクイズの他に「ボカロ」「ネットカルチャー」「ツイ廃」「アニメ」「日本史」「世界史」「性癖」「VTuber」など様々なジャンルで出題してください。(ぜひこれ以外のジャンルを出してほしい)"
+                '{"genre":"ジャンル","question":"問題文","answer":true/false,"explanation":"解説"}'
+                "json以外のデータを出力しないでください。(メッセージも)"
             )
 
-            print(response.text)
-            rawText = (response.text or "").strip()
+            response = await openaiClient.responses.create(
+                model="gemini-3-pro-preview",
+                instructions="あなたはクイズ出題AIです。JSONのみ返してください。",
+                input=prompt,
+            )
+
+            rawText = (response.output_text or "").strip()
             rawText = re.sub(r"^```json\s*", "", rawText, flags=re.I)
             rawText = re.sub(r"```$", "", rawText).strip()
             rawText = re.sub(r"<thought>.*?</thought>", "", rawText, flags=re.S).strip()
